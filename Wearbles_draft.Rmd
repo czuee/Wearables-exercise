@@ -5,8 +5,106 @@ date: "8/6/2019"
 output: html_document
 ---
 
+# Wearables activity prediciton
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Read the file
+```{r pckgs, include=FALSE}
+library(ggplot2)
+library(caret)
+library(dplyr)
+```
+
+## Read the files
+
+```{r}
+training <- read.csv("../pml-training.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
+testing  <- read.csv("../pml-testing.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
+
+#head(training, 2)
+dim(training); dim(testing)
+```
+I cleaned up the missing values, NAs and #DIV/0! while loading the files. There are a lot of missing values 19,000+, so imputation is not possible. 
+
+##Exploratory data analysis
+
+### Lets study the response variable
+The response variable is classe. According to the text,
+*Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz5vuWJGhXP*
+
+```{r}
+qplot(training$classe, ylab = "Frequency" , xlab = "Class", main = "Exercise accuracy")
+```
+
+
+### Understanding the variables 
+
+The publication mentioned on the website has details about the features.
+
+- Euler angles (roll, pitch and yaw)
+- For Euler angles of each of 4 sensor, eight features calculated: mean, variance, standard deviation, max, min, amplitude, kurtosis and skewness (`r 3*4*8` features)
+-  raw accelerometer, gyroscope and magnetometer readings, for each sensor (`r 3*4` features)
+
+
+```{r}
+#summary(training, digits = 2)
+```
+
+- Many of the variables have lots of NAs. For exampe, kurtosis_yaw_belt does not have any significant values. 
+- The #DIV/0! are probably computation errors. Also, the variables where DIV/0 occur do not have other values and hence imputation is not possible.
+- Readings for each of the individuals were taken only at a certain timepoint. The raw time points might be interesting though.
+- Timestamp variables don't seem to be important
+
+##Feature Selection & preprocessing
+
+Remove columns with NA, and the timestamps.
+
+```{r}
+trainproc <- training[colSums(!is.na(training)) > 0]
+trainproc <- trainproc[ ,-c(1,3:7)]
+```
+
+ Look for near zero variance.
+```{r}
+nzv <- nearZeroVar(trainproc, saveMetrics= TRUE)
+nzv[nzv$zeroVar,]
+#summary(trainproc$amplitude_yaw_belt)
+
+trainproc <- select(trainproc, -c("amplitude_yaw_belt", "amplitude_yaw_dumbbell", "amplitude_yaw_forearm"))
+#dim(trainproc)
+```
+
+Columns with the highest correlation
+```{r}
+M <- abs(cor(trainproc[,-c(1,145)]))
+diag(M) <- 0
+which(M > 0.9, arr.ind=T)
+```
+Accel, roll & pitch are correlated & the gyros variables are correlated amongst themselves.
+
+```{r}
+
+preObj <- preProcess(trainproc[,-144],method=c("center","scale"))
+trainSc <- predict(preObj, trainproc)
+par(mfrow=c(1,2)); hist(trainSc$total_accel_forearm) ;qqnorm(trainSc$total_accel_forearm)
+```
+
+
+```{r}
+typeColor <- as.numeric(trainproc$classe)
+preProc <- preProcess(trainproc[,-c(1,145)],method="pca",pcaComp=10)
+trainPC <- predict(preProc, trainproc[,-c(1,145)])
+xyplot(PC1 ~ PC2, data = trainPC, groups =  typeColor,auto.key = list(columns = 5))
+xyplot(total_accel_forearm ~ yaw_belt, data = trainSc, groups =  typeColor,auto.key = list(columns = 5))
+
+```
+
+Feature importance for classe
+```{r}
+library(FSelector)
+information.gain(classe~., trainproc)
+```
+
