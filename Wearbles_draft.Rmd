@@ -14,7 +14,25 @@ knitr::opts_chunk$set(echo = TRUE)
 library(ggplot2)
 library(caret)
 library(dplyr)
+library(gridExtra)
+library(grid)
+library(FactoMineR)
+library(corrplot)
 ```
+
+## Business Question
+
+#### What are we trying to predict?
+
+The classe variable which consists of 5 categories defining how well the exercises were carried out by 6 participants. We have a number of sensor measurements that can be used to predict this variable.
+
+#### What type of problem is it?
+
+This is a multivariate prediction problem in which we have to build a model. Describe how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+#### What type of data do we have? 
+The data is in csv format. It presents a header row with the column names. The predictor variable is categorical.
+
 
 ## Read the files
 
@@ -38,7 +56,7 @@ Read more: http://groupware.les.inf.puc-rio.br/har#ixzz5vuWJGhXP*
 ```{r}
 qplot(training$classe, ylab = "Frequency" , xlab = "Class", main = "Exercise accuracy")
 ```
-
+Class A which is the exercise done correctly is the most frequent. 
 
 ### Understanding the variables 
 
@@ -50,13 +68,15 @@ The publication mentioned on the website has details about the features.
 
 
 ```{r}
-#summary(training, digits = 2)
+descr <- dlookr::describe(training)
+descr[which(descr$skewness > 10), ]
 ```
 
 - Many of the variables have lots of NAs. For exampe, kurtosis_yaw_belt does not have any significant values. 
 - The #DIV/0! are probably computation errors. Also, the variables where DIV/0 occur do not have other values and hence imputation is not possible.
 - Readings for each of the individuals were taken only at a certain timepoint. The raw time points might be interesting though.
 - Timestamp variables don't seem to be important
+- Some of the variables hav high skewness & kurtosis
 
 ##Feature Selection & preprocessing
 
@@ -67,44 +87,74 @@ trainproc <- training[colSums(!is.na(training)) > 0]
 trainproc <- trainproc[ ,-c(1,3:7)]
 ```
 
- Look for near zero variance.
+Features with zero variance can be removed
 ```{r}
 nzv <- nearZeroVar(trainproc, saveMetrics= TRUE)
 nzv[nzv$zeroVar,]
-#summary(trainproc$amplitude_yaw_belt)
+nzv_del <- rownames(nzv[nzv$zeroVar,])
 
-trainproc <- select(trainproc, -c("amplitude_yaw_belt", "amplitude_yaw_dumbbell", "amplitude_yaw_forearm"))
-#dim(trainproc)
+trainproc <- select(trainproc, -nzv_del)
+dim(trainproc)
 ```
 
 Columns with the highest correlation
 ```{r}
-M <- abs(cor(trainproc[,-c(1,145)]))
+
+M <- abs(cor(trainproc[ ,-c(1,119)]))
+#corrplot(M, method = "color", diag = FALSE, addrect = TRUE, tl.pos = FALSE)
 diag(M) <- 0
 which(M > 0.9, arr.ind=T)
+
 ```
-Accel, roll & pitch are correlated & the gyros variables are correlated amongst themselves.
+Accel, roll & pitch for belt sensors are highly correlated & the gyros arm and dumbell variables are correlated amongst themselves.
 
 ```{r}
 
 preObj <- preProcess(trainproc[,-144],method=c("center","scale"))
 trainSc <- predict(preObj, trainproc)
 par(mfrow=c(1,2)); hist(trainSc$total_accel_forearm) ;qqnorm(trainSc$total_accel_forearm)
+par(mfrow=c(1,2));hist(trainproc$var_yaw_belt);qqnorm(trainproc$roll_belt)
 ```
 
+Some of the variables are bimodal.
+
+
+
+Most important features for classe
+```{r}
+library(FSelector)
+inf.gain <- information.gain(classe~., trainproc)
+#summary(inf.gain)
+row.names(inf.gain)[order(inf.gain$attr_importance, decreasing = TRUE)][1:20]
+```
+Most of the belt and dumbell sensor related features are important.
+
+```{r}
+set.seed(86)
+ 
+# Setting the cross validation parameters
+ctrl_param <- rfeControl(functions = rfFuncs,
+                   method = "cv",
+                   repeats = 5,
+                   verbose = FALSE,
+                   returnResamp = "final")
+
+# 
+rfe_lm_profile <- rfe(trainproc[, -145], trainproc[, 145],
+                 sizes = c(10,15),
+                 rfeControl = ctrl_param,
+                 na.action = na.omit,
+                 )
+ 
+rfe_lm_profile
+```
 
 ```{r}
 typeColor <- as.numeric(trainproc$classe)
-preProc <- preProcess(trainproc[,-c(1,145)],method="pca",pcaComp=10)
-trainPC <- predict(preProc, trainproc[,-c(1,145)])
+preProc <- preProcess(trainproc[,-c(119)],method="pca",pcaComp=10)
+trainPC <- predict(preProc, trainproc[,-c(1,119)])
+
 xyplot(PC1 ~ PC2, data = trainPC, groups =  typeColor,auto.key = list(columns = 5))
-xyplot(total_accel_forearm ~ yaw_belt, data = trainSc, groups =  typeColor,auto.key = list(columns = 5))
+xyplot(total_accel_belt ~ roll_belt, data = trainSc, groups =  typeColor,auto.key = list(columns = 5))
 
 ```
-
-Feature importance for classe
-```{r}
-library(FSelector)
-information.gain(classe~., trainproc)
-```
-
