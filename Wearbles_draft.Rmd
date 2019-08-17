@@ -37,8 +37,8 @@ The data is in csv format. It presents a header row with the column names. The p
 ## Read the files
 
 ```{r}
-training <- read.csv("../pml-training.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
-testing  <- read.csv("../pml-testing.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
+training <- read.csv("pml-training.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
+testing  <- read.csv("pml-testing.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
 
 #head(training, 2)
 dim(training); dim(testing)
@@ -76,22 +76,23 @@ descr[which(descr$skewness > 10), ]
 - The #DIV/0! are probably computation errors. Also, the variables where DIV/0 occur do not have other values and hence imputation is not possible.
 - Readings for each of the individuals were taken only at a certain timepoint. The raw time points might be interesting though.
 - Timestamp variables don't seem to be important
-- Some of the variables hav high skewness & kurtosis
+- Some of the variables have high skewness & kurtosis
 
 ##Feature Selection & preprocessing
 
-Remove columns with NA, and the timestamps.
+Remove columns with only NAs, and the timestamps which are not important.
 
 ```{r}
 trainproc <- training[colSums(!is.na(training)) > 0]
 trainproc <- trainproc[ ,-c(1,3:7)]
+
 ```
 
 Features with zero variance can be removed
 ```{r}
 nzv <- nearZeroVar(trainproc, saveMetrics= TRUE)
 nzv[nzv$zeroVar,]
-nzv_del <- rownames(nzv[nzv$zeroVar,])
+nzv_del <- rownames(nzv[nzv$nzv,])
 
 trainproc <- select(trainproc, -nzv_del)
 dim(trainproc)
@@ -100,20 +101,25 @@ dim(trainproc)
 Columns with the highest correlation
 ```{r}
 
-M <- abs(cor(trainproc[ ,-c(1,119)]))
-#corrplot(M, method = "color", diag = FALSE, addrect = TRUE, tl.pos = FALSE)
-diag(M) <- 0
-which(M > 0.9, arr.ind=T)
+M <- cor(trainproc[ ,-c(1,119)], use = "complete.obs")
 
+corrplot(M, 
+         method = "color", diag = FALSE, 
+         #na.label.col = "yellow",
+         order = "FPC",
+         tl.pos = "n"
+         )
+diag(M) <- 0
+which(M > 0.99, arr.ind=T)
 ```
-Accel, roll & pitch for belt sensors are highly correlated & the gyros arm and dumbell variables are correlated amongst themselves.
+Accel, roll & pitch for belt sensors are highly correlated & the gyros arm and dumbell variables are correlated amongst themselves. 
 
 ```{r}
 
 preObj <- preProcess(trainproc[,-144],method=c("center","scale"))
 trainSc <- predict(preObj, trainproc)
 par(mfrow=c(1,2)); hist(trainSc$total_accel_forearm) ;qqnorm(trainSc$total_accel_forearm)
-par(mfrow=c(1,2));hist(trainproc$var_yaw_belt);qqnorm(trainproc$roll_belt)
+par(mfrow=c(1,2));hist(trainproc$roll_belt);qqnorm(trainproc$roll_belt)
 ```
 
 Some of the variables are bimodal.
