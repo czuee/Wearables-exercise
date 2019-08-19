@@ -2,7 +2,9 @@
 title: "Wearables_draft"
 author: "Czuee Morey"
 date: "8/6/2019"
-output: html_document
+output: 
+  html_document: 
+    keep_md: yes
 ---
 
 # Wearables activity prediciton
@@ -18,6 +20,7 @@ library(gridExtra)
 library(grid)
 library(FactoMineR)
 library(corrplot)
+library(doParallel)
 ```
 
 ## Business Question
@@ -40,7 +43,6 @@ The data is in csv format. It presents a header row with the column names. The p
 training <- read.csv("pml-training.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
 testing  <- read.csv("pml-testing.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
 
-#head(training, 2)
 dim(training); dim(testing)
 ```
 I cleaned up the missing values, NAs and #DIV/0! while loading the files. There are a lot of missing values 19,000+, so imputation is not possible. 
@@ -65,6 +67,7 @@ The publication mentioned on the website has details about the features.
 - Euler angles (roll, pitch and yaw)
 - For Euler angles of each of 4 sensor, eight features calculated: mean, variance, standard deviation, max, min, amplitude, kurtosis and skewness (`r 3*4*8` features)
 -  raw accelerometer, gyroscope and magnetometer readings, for each sensor (`r 3*4` features)
+- 6 users
 
 
 ```{r}
@@ -74,93 +77,120 @@ descr[which(descr$skewness > 10), ]
 
 - Many of the variables have lots of NAs. For exampe, kurtosis_yaw_belt does not have any significant values. 
 - The #DIV/0! are probably computation errors. Also, the variables where DIV/0 occur do not have other values and hence imputation is not possible.
-- Readings for each of the individuals were taken only at a certain timepoint. The raw time points might be interesting though.
-- Timestamp variables don't seem to be important
+- Readings for each of the individuals were taken only at a certain timepoint. The raw time point part2 is uniformly distributed, while part 1 only has specific timepoints.
 - Some of the variables have high skewness & kurtosis
+- Time of doing exercise and user names should not be important to make a prediction for the exercise and hence can be removed.
 
-##Feature Selection & preprocessing
+### Feature Selection & preprocessing
 
-Remove columns with only NAs, and the timestamps which are not important.
+Remove columns with NAs, and the users, timestamps which are not important.
 
 ```{r}
 trainproc <- training[colSums(!is.na(training)) > 0]
-trainproc <- trainproc[ ,-c(1,3:7)]
+trainproc <- trainproc[ ,-c(1:7)]
 
 ```
 
-Features with zero variance can be removed
 ```{r}
-nzv <- nearZeroVar(trainproc, saveMetrics= TRUE)
-nzv[nzv$zeroVar,]
-nzv_del <- rownames(nzv[nzv$nzv,])
-
-trainproc <- select(trainproc, -nzv_del)
+trainproc <- trainproc[sapply(trainproc, function(x) !any(is.na(x)))]
 dim(trainproc)
 ```
 
-Columns with the highest correlation
-```{r}
-
-M <- cor(trainproc[ ,-c(1,119)], use = "complete.obs")
-
-corrplot(M, 
-         method = "color", diag = FALSE, 
-         #na.label.col = "yellow",
-         order = "FPC",
-         tl.pos = "n"
-         )
-diag(M) <- 0
-which(M > 0.99, arr.ind=T)
-```
-Accel, roll & pitch for belt sensors are highly correlated & the gyros arm and dumbell variables are correlated amongst themselves. 
-
-```{r}
-
-preObj <- preProcess(trainproc[,-144],method=c("center","scale"))
-trainSc <- predict(preObj, trainproc)
-par(mfrow=c(1,2)); hist(trainSc$total_accel_forearm) ;qqnorm(trainSc$total_accel_forearm)
-par(mfrow=c(1,2));hist(trainproc$roll_belt);qqnorm(trainproc$roll_belt)
-```
-
-Some of the variables are bimodal.
-
-
-
-Most important features for classe
-```{r}
-library(FSelector)
-inf.gain <- information.gain(classe~., trainproc)
-#summary(inf.gain)
-row.names(inf.gain)[order(inf.gain$attr_importance, decreasing = TRUE)][1:20]
-```
-Most of the belt and dumbell sensor related features are important.
-
-```{r}
-set.seed(86)
- 
-# Setting the cross validation parameters
-ctrl_param <- rfeControl(functions = rfFuncs,
-                   method = "cv",
-                   repeats = 5,
-                   verbose = FALSE,
-                   returnResamp = "final")
-
-# 
-rfe_lm_profile <- rfe(trainproc[, -145], trainproc[, 145],
-                 sizes = c(10,15),
-                 rfeControl = ctrl_param,
-                 na.action = na.omit,
-                 )
- 
-rfe_lm_profile
-```
-
+PCA with selected features
 ```{r}
 typeColor <- as.numeric(trainproc$classe)
-preProc <- preProcess(trainproc[,-c(119)],method="pca",pcaComp=10)
-trainPC <- predict(preProc, trainproc[,-c(1,119)])
+preProc <- preProcess(trainproc[,-53],method="pca",pcaComp=10)
+trainPC <- predict(preProc, trainproc[,-53])
 
-xyplot(PC1 ~ PC2, data = trainPC, groups =  typeColor,auto.key = list(columns = 5))
-xyplot(total_accel_belt ~ roll_belt, data = trainSc, groups =  typeColor,auto.key = list(columns = 5))
+xyplot(PC1 ~ PC2, data = trainPC, groups =  typeColor, auto.key = list(columns = 5)) #Colored by classe
+xyplot(PC1 ~ PC2, data = trainPC, groups =  as.numeric(training$user_name),auto.key = list(columns = 6)) #Colored by user name
 
 ```
+The data seems to be clearly clustered according to the different users. However, there also seems to be some clustering according to the classe variable. These patterns can be picked up using various training methods.
+
+## Modeling
+
+### Validation set
+Creating a validation set to test out of sample error once I find suitable models.
+```{r}
+inTrain <- createDataPartition(trainproc$classe, p = 0.8, list = FALSE)
+
+trainNum <- trainproc[inTrain,]
+validation <- trainproc[-inTrain,]
+dim(trainNum);dim(validation)
+```
+
+### Training on various predictors
+```{r cache=TRUE}
+set.seed(123)
+registerDoParallel(4) 
+getDoParWorkers()
+
+my_control <- trainControl(method = "cv", # for "cross-validation"
+                           number = 3, # number of k-folds
+                           savePredictions = "final",
+                           allowParallel = TRUE)
+
+fit1 <- train(classe ~ ., 
+              data = trainNum,
+              method = c("rf"),
+              trControl = my_control,
+              )
+fit1$results$Accuracy
+```
+Accuracy is 0.99
+
+```{r}
+trainpred <- predict(fit1, newdata = trainNum)
+
+randomForest::varImpPlot(fit1$finalModel)
+```
+
+```{r  cache=TRUE}
+fit2 <- train(classe ~ ., 
+              data = trainNum,
+              method = c("lda"),
+              trControl = my_control,
+              )
+
+fit2
+```
+
+```{r  cache=TRUE}
+set.seed(123)
+registerDoParallel(4) 
+getDoParWorkers()
+fit3 <- train(classe ~ ., 
+              data = trainNum,
+              method = c("xgbTree"),
+              trControl = my_control,
+              )
+fit3
+```
+
+Both random forest and xgbtree give an accuracy of 0.99 on the training set. Let's see how they perform on the validation set.
+
+### Out-of-sample accuracy
+```{r}
+
+valpred1 <- predict(fit1, newdata = validation)
+valpred2 <- predict(fit2, newdata = validation)
+valpred3 <- predict(fit3, newdata = validation)
+
+confusionMatrix(valpred1, validation$classe)
+#confusionMatrix(valpred2, validation$classe)
+confusionMatrix(valpred3, validation$classe)
+
+```
+
+xgbtree has the best prediction accuracy on the validation dataset of 0.9967, as well as better per-class  statistics. Random forest is a close second.
+
+## Test set prediction
+```{r}
+test.xgb <- predict(fit3, newdata = testing)
+test.rf <- predict(fit1, newdata = testing)
+
+test.xgb; test.rf
+```
+
+The prediction using both RF & XGB tree is identical on the test set.

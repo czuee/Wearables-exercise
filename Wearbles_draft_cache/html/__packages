@@ -1,0 +1,11 @@
+base
+ggplot2
+lattice
+caret
+dplyr
+gridExtra
+FactoMineR
+corrplot
+foreach
+iterators
+doParallel
