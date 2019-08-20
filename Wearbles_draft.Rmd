@@ -40,8 +40,8 @@ The data is in csv format. It presents a header row with the column names. The p
 ## Read the files
 
 ```{r}
-training <- read.csv("pml-training.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
-testing  <- read.csv("pml-testing.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
+training <- read.csv("../pml-training.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
+testing  <- read.csv("../pml-testing.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
 
 dim(training); dim(testing)
 ```
@@ -106,7 +106,8 @@ xyplot(PC1 ~ PC2, data = trainPC, groups =  typeColor, auto.key = list(columns =
 xyplot(PC1 ~ PC2, data = trainPC, groups =  as.numeric(training$user_name),auto.key = list(columns = 6)) #Colored by user name
 
 ```
-The data seems to be clearly clustered according to the different users. However, there also seems to be some clustering according to the classe variable. These patterns can be picked up using various training methods.
+
+The data seems to clearly cluster according to the different users. However, there also seems to be some clustering according to the classe variable. These patterns can be picked up using various training methods.
 
 ## Modeling
 
@@ -121,6 +122,7 @@ dim(trainNum);dim(validation)
 ```
 
 ### Training on various predictors
+#### Random Forest
 ```{r cache=TRUE}
 set.seed(123)
 registerDoParallel(4) 
@@ -136,16 +138,29 @@ fit1 <- train(classe ~ .,
               method = c("rf"),
               trControl = my_control,
               )
-fit1$results$Accuracy
+
+fit1
 ```
-Accuracy is 0.99
+The in-sample accuracy for random forest is 0.988. 
 
 ```{r}
-trainpred <- predict(fit1, newdata = trainNum)
+fit1$finalModel
+```
 
+In-sample error rate is 1.2% (1-accuracy). OOB estimate of  error rate is 0.57%
+
+Plot of random forest accuracy with predictors.
+```{r}
+plot(fit1, log = "y", lwd = 2, main = "Random forest accuracy", xlab = "Predictors", 
+    ylab = "Accuracy")
+```
+
+Variable importance in the randomforest model
+```{r}
 randomForest::varImpPlot(fit1$finalModel)
 ```
 
+#### Linear Discriminant analysis
 ```{r  cache=TRUE}
 fit2 <- train(classe ~ ., 
               data = trainNum,
@@ -156,6 +171,9 @@ fit2 <- train(classe ~ .,
 fit2
 ```
 
+Accuracy for LDA is much lower at 70.5%. In-sample error rate is 29.5%.
+
+#### XG Boost Tree
 ```{r  cache=TRUE}
 set.seed(123)
 registerDoParallel(4) 
@@ -165,12 +183,19 @@ fit3 <- train(classe ~ .,
               method = c("xgbTree"),
               trControl = my_control,
               )
-fit3
+max(fit3$results$Accuracy)
+
 ```
 
-Both random forest and xgbtree give an accuracy of 0.99 on the training set. Let's see how they perform on the validation set.
+Both random forest and xgbtree give an accuracy of ~0.99 on the training set. Let's see how they perform on the validation set.
 
-### Out-of-sample accuracy
+```{r}
+mat <- xgboost::xgb.importance(feature_names = colnames(trainNum),model = fit3$finalModel)
+xgboost::xgb.plot.importance (importance_matrix = mat[1:20]) 
+```
+
+
+### Out-of-sample accuracy & error
 ```{r}
 
 valpred1 <- predict(fit1, newdata = validation)
@@ -183,14 +208,34 @@ confusionMatrix(valpred3, validation$classe)
 
 ```
 
-xgbtree has the best prediction accuracy on the validation dataset of 0.9967, as well as better per-class  statistics. Random forest is a close second.
+xgbtree has the best prediction accuracy on the validation dataset of 0.996, as well as better per-class  statistics. Random forest is a close second.
+
+#### Expected Out-of sample error in percent
+```{r}
+accuracy.rf <- sum(valpred1 == validation$classe)/length(valpred1)
+accuracy.xgb <- sum(valpred3 == validation$classe)/length(valpred3)
+
+out.sample.error.rf <- (1 - accuracy.rf)*100
+out.sample.error.xgb <- (1 - accuracy.xgb)*100
+
+print(out.sample.error.rf , digits = 3)
+print(out.sample.error.xgb , digits = 3)
+
+```
+
 
 ## Test set prediction
 ```{r}
 test.xgb <- predict(fit3, newdata = testing)
-test.rf <- predict(fit1, newdata = testing)
 
-test.xgb; test.rf
+test.xgb
 ```
 
-The prediction using both RF & XGB tree is identical on the test set.
+
+#Conclusion
+
+The dataset had a number of features alongwith the categorical response variable classe. The features with NA values were removed alongwith features like user and time which should not have an impact on our response variable. PCA with these features show that the classe variables segregate according to these features. It was interesting to note that there was clear segregation based on the users (even though users were not included as a feature). This indicates that characteristics of usage by different users could be detected by the sensors.
+
+Random forest, XGBTree and LDA models were trained on the data using default parameters and 3-fold cross-validation. RF & XGBtree had the best performance with ~99% accuracy. The out-of-sample error rate estimated on the validation data was 0.54% and 0.43% for xgbtree & Rf respectively.
+
+Prediction on the test set was done using XGB tree model.

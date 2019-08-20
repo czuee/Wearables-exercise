@@ -30,8 +30,8 @@ The data is in csv format. It presents a header row with the column names. The p
 
 
 ```r
-training <- read.csv("pml-training.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
-testing  <- read.csv("pml-testing.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
+training <- read.csv("../pml-training.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
+testing  <- read.csv("../pml-testing.csv", header = TRUE, na.strings = c("NA", "", "#DIV/0!"))
 
 dim(training); dim(testing)
 ```
@@ -170,7 +170,8 @@ xyplot(PC1 ~ PC2, data = trainPC, groups =  as.numeric(training$user_name),auto.
 ```
 
 ![](Wearbles_draft_files/figure-html/unnamed-chunk-6-2.png)<!-- -->
-The data seems to be clearly clustered according to the different users. However, there also seems to be some clustering according to the classe variable. These patterns can be picked up using various training methods.
+
+The data seems to clearly cluster according to the different users. However, there also seems to be some clustering according to the classe variable. These patterns can be picked up using various training methods.
 
 ## Modeling
 
@@ -194,6 +195,7 @@ dim(trainNum);dim(validation)
 ```
 
 ### Training on various predictors
+#### Random Forest
 
 ```r
 set.seed(123)
@@ -216,23 +218,75 @@ fit1 <- train(classe ~ .,
               method = c("rf"),
               trControl = my_control,
               )
-fit1$results$Accuracy
+
+fit1
 ```
 
 ```
-## [1] 0.9905088 0.9899992 0.9830567
+## Random Forest 
+## 
+## 15699 samples
+##    52 predictor
+##     5 classes: 'A', 'B', 'C', 'D', 'E' 
+## 
+## No pre-processing
+## Resampling: Cross-Validated (3 fold) 
+## Summary of sample sizes: 10468, 10465, 10465 
+## Resampling results across tuning parameters:
+## 
+##   mtry  Accuracy   Kappa    
+##    2    0.9899993  0.9873479
+##   27    0.9900634  0.9874292
+##   52    0.9820370  0.9772751
+## 
+## Accuracy was used to select the optimal model using the largest value.
+## The final value used for the model was mtry = 27.
 ```
-Accuracy is 0.99
+The in-sample accuracy for random forest is 0.988. 
 
 
 ```r
-trainpred <- predict(fit1, newdata = trainNum)
+fit1$finalModel
+```
 
+```
+## 
+## Call:
+##  randomForest(x = x, y = y, mtry = param$mtry) 
+##                Type of random forest: classification
+##                      Number of trees: 500
+## No. of variables tried at each split: 27
+## 
+##         OOB estimate of  error rate: 0.64%
+## Confusion matrix:
+##      A    B    C    D    E class.error
+## A 4458    3    2    0    1 0.001344086
+## B   24 3010    4    0    0 0.009216590
+## C    0   15 2711   12    0 0.009861213
+## D    0    0   26 2543    4 0.011659541
+## E    0    0    4    6 2876 0.003465003
+```
+
+In-sample error rate is 1.2% (1-accuracy). OOB estimate of  error rate is 0.57%
+
+Plot of random forest accuracy with predictors.
+
+```r
+plot(fit1, log = "y", lwd = 2, main = "Random forest accuracy", xlab = "Predictors", 
+    ylab = "Accuracy")
+```
+
+![](Wearbles_draft_files/figure-html/unnamed-chunk-10-1.png)<!-- -->
+
+Variable importance in the randomforest model
+
+```r
 randomForest::varImpPlot(fit1$finalModel)
 ```
 
-![](Wearbles_draft_files/figure-html/unnamed-chunk-9-1.png)<!-- -->
+![](Wearbles_draft_files/figure-html/unnamed-chunk-11-1.png)<!-- -->
 
+#### Linear Discriminant analysis
 
 ```r
 fit2 <- train(classe ~ ., 
@@ -253,13 +307,16 @@ fit2
 ## 
 ## No pre-processing
 ## Resampling: Cross-Validated (3 fold) 
-## Summary of sample sizes: 10466, 10466, 10466 
+## Summary of sample sizes: 10466, 10465, 10467 
 ## Resampling results:
 ## 
 ##   Accuracy   Kappa    
-##   0.7041213  0.6255193
+##   0.6986423  0.6187306
 ```
 
+Accuracy for LDA is much lower at 70.5%. In-sample error rate is 29.5%.
+
+#### XG Boost Tree
 
 ```r
 set.seed(123)
@@ -277,252 +334,25 @@ fit3 <- train(classe ~ .,
               method = c("xgbTree"),
               trControl = my_control,
               )
-fit3
+max(fit3$results$Accuracy)
 ```
 
 ```
-## eXtreme Gradient Boosting 
-## 
-## 15699 samples
-##    52 predictor
-##     5 classes: 'A', 'B', 'C', 'D', 'E' 
-## 
-## No pre-processing
-## Resampling: Cross-Validated (3 fold) 
-## Summary of sample sizes: 10468, 10465, 10465 
-## Resampling results across tuning parameters:
-## 
-##   eta  max_depth  colsample_bytree  subsample  nrounds  Accuracy 
-##   0.3  1          0.6               0.50        50      0.8066125
-##   0.3  1          0.6               0.50       100      0.8597381
-##   0.3  1          0.6               0.50       150      0.8904403
-##   0.3  1          0.6               0.75        50      0.8029826
-##   0.3  1          0.6               0.75       100      0.8615210
-##   0.3  1          0.6               0.75       150      0.8891658
-##   0.3  1          0.6               1.00        50      0.8031100
-##   0.3  1          0.6               1.00       100      0.8596738
-##   0.3  1          0.6               1.00       150      0.8868098
-##   0.3  1          0.8               0.50        50      0.8069935
-##   0.3  1          0.8               0.50       100      0.8631130
-##   0.3  1          0.8               0.50       150      0.8920966
-##   0.3  1          0.8               0.75        50      0.8038095
-##   0.3  1          0.8               0.75       100      0.8632405
-##   0.3  1          0.8               0.75       150      0.8905675
-##   0.3  1          0.8               1.00        50      0.8041924
-##   0.3  1          0.8               1.00       100      0.8603746
-##   0.3  1          0.8               1.00       150      0.8882745
-##   0.3  2          0.6               0.50        50      0.9143912
-##   0.3  2          0.6               0.50       100      0.9543925
-##   0.3  2          0.6               0.50       150      0.9711446
-##   0.3  2          0.6               0.75        50      0.9123529
-##   0.3  2          0.6               0.75       100      0.9554753
-##   0.3  2          0.6               0.75       150      0.9721002
-##   0.3  2          0.6               1.00        50      0.9089769
-##   0.3  2          0.6               1.00       100      0.9533103
-##   0.3  2          0.6               1.00       150      0.9707627
-##   0.3  2          0.8               0.50        50      0.9154104
-##   0.3  2          0.8               0.50       100      0.9569410
-##   0.3  2          0.8               0.50       150      0.9735015
-##   0.3  2          0.8               0.75        50      0.9182767
-##   0.3  2          0.8               0.75       100      0.9564949
-##   0.3  2          0.8               0.75       150      0.9736289
-##   0.3  2          0.8               1.00        50      0.9159837
-##   0.3  2          0.8               1.00       100      0.9552215
-##   0.3  2          0.8               1.00       150      0.9712725
-##   0.3  3          0.6               0.50        50      0.9631195
-##   0.3  3          0.6               0.50       100      0.9847124
-##   0.3  3          0.6               0.50       150      0.9900631
-##   0.3  3          0.6               0.75        50      0.9626729
-##   0.3  3          0.6               0.75       100      0.9847763
-##   0.3  3          0.6               0.75       150      0.9907636
-##   0.3  3          0.6               1.00        50      0.9626737
-##   0.3  3          0.6               1.00       100      0.9845217
-##   0.3  3          0.6               1.00       150      0.9907000
-##   0.3  3          0.8               0.50        50      0.9645205
-##   0.3  3          0.8               0.50       100      0.9845851
-##   0.3  3          0.8               0.50       150      0.9906361
-##   0.3  3          0.8               0.75        50      0.9643296
-##   0.3  3          0.8               0.75       100      0.9850948
-##   0.3  3          0.8               0.75       150      0.9905090
-##   0.3  3          0.8               1.00        50      0.9636286
-##   0.3  3          0.8               1.00       100      0.9844577
-##   0.3  3          0.8               1.00       150      0.9899356
-##   0.4  1          0.6               0.50        50      0.8266767
-##   0.4  1          0.6               0.50       100      0.8852800
-##   0.4  1          0.6               0.50       150      0.9085305
-##   0.4  1          0.6               0.75        50      0.8287155
-##   0.4  1          0.6               0.75       100      0.8799930
-##   0.4  1          0.6               0.75       150      0.9082122
-##   0.4  1          0.6               1.00        50      0.8265502
-##   0.4  1          0.6               1.00       100      0.8802483
-##   0.4  1          0.6               1.00       150      0.9062371
-##   0.4  1          0.8               0.50        50      0.8327938
-##   0.4  1          0.8               0.50       100      0.8844525
-##   0.4  1          0.8               0.50       150      0.9101874
-##   0.4  1          0.8               0.75        50      0.8281429
-##   0.4  1          0.8               0.75       100      0.8815862
-##   0.4  1          0.8               0.75       150      0.9086579
-##   0.4  1          0.8               1.00        50      0.8246400
-##   0.4  1          0.8               1.00       100      0.8797394
-##   0.4  1          0.8               1.00       150      0.9047093
-##   0.4  2          0.6               0.50        50      0.9330545
-##   0.4  2          0.6               0.50       100      0.9680872
-##   0.4  2          0.6               0.50       150      0.9816552
-##   0.4  2          0.6               0.75        50      0.9331817
-##   0.4  2          0.6               0.75       100      0.9691060
-##   0.4  2          0.6               0.75       150      0.9810818
-##   0.4  2          0.6               1.00        50      0.9300605
-##   0.4  2          0.6               1.00       100      0.9658579
-##   0.4  2          0.6               1.00       150      0.9787251
-##   0.4  2          0.8               0.50        50      0.9377679
-##   0.4  2          0.8               0.50       100      0.9697432
-##   0.4  2          0.8               0.50       150      0.9816548
-##   0.4  2          0.8               0.75        50      0.9336278
-##   0.4  2          0.8               0.75       100      0.9684695
-##   0.4  2          0.8               0.75       150      0.9814002
-##   0.4  2          0.8               1.00        50      0.9306338
-##   0.4  2          0.8               1.00       100      0.9661129
-##   0.4  2          0.8               1.00       150      0.9795529
-##   0.4  3          0.6               0.50        50      0.9721006
-##   0.4  3          0.6               0.50       100      0.9882797
-##   0.4  3          0.6               0.50       150      0.9914643
-##   0.4  3          0.6               0.75        50      0.9734379
-##   0.4  3          0.6               0.75       100      0.9895534
-##   0.4  3          0.6               0.75       150      0.9918465
-##   0.4  3          0.6               1.00        50      0.9722916
-##   0.4  3          0.6               1.00       100      0.9889165
-##   0.4  3          0.6               1.00       150      0.9917829
-##   0.4  3          0.8               0.50        50      0.9743297
-##   0.4  3          0.8               0.50       100      0.9889801
-##   0.4  3          0.8               0.50       150      0.9919102
-##   0.4  3          0.8               0.75        50      0.9738202
-##   0.4  3          0.8               0.75       100      0.9895534
-##   0.4  3          0.8               0.75       150      0.9923559
-##   0.4  3          0.8               1.00        50      0.9738840
-##   0.4  3          0.8               1.00       100      0.9889800
-##   0.4  3          0.8               1.00       150      0.9921012
-##   Kappa    
-##   0.7550109
-##   0.8223963
-##   0.8613043
-##   0.7503938
-##   0.8246834
-##   0.8596884
-##   0.7504921
-##   0.8223721
-##   0.8567091
-##   0.7553950
-##   0.8266768
-##   0.8633792
-##   0.7513232
-##   0.8268820
-##   0.8614538
-##   0.7518692
-##   0.8232602
-##   0.8585327
-##   0.8916865
-##   0.9423073
-##   0.9634973
-##   0.8890875
-##   0.9436696
-##   0.9647067
-##   0.8848578
-##   0.9409448
-##   0.9630184
-##   0.8929729
-##   0.9455278
-##   0.9664800
-##   0.8965636
-##   0.9449611
-##   0.9666414
-##   0.8937118
-##   0.9433570
-##   0.9636624
-##   0.9533385
-##   0.9806618
-##   0.9874310
-##   0.9527868
-##   0.9807435
-##   0.9883166
-##   0.9527831
-##   0.9804211
-##   0.9882362
-##   0.9551203
-##   0.9805013
-##   0.9881550
-##   0.9548790
-##   0.9811460
-##   0.9879947
-##   0.9539948
-##   0.9803399
-##   0.9872689
-##   0.7805891
-##   0.8547696
-##   0.8842102
-##   0.7830767
-##   0.8480670
-##   0.8837951
-##   0.7802696
-##   0.8483728
-##   0.8812946
-##   0.7882505
-##   0.8537027
-##   0.8863001
-##   0.7823540
-##   0.8501061
-##   0.8843718
-##   0.7778897
-##   0.8477971
-##   0.8793712
-##   0.9153159
-##   0.9596338
-##   0.9767955
-##   0.9154844
-##   0.9609155
-##   0.9760675
-##   0.9115236
-##   0.9568129
-##   0.9730891
-##   0.9212728
-##   0.9617256
-##   0.9767934
-##   0.9160499
-##   0.9601149
-##   0.9764729
-##   0.9122638
-##   0.9571351
-##   0.9741348
-##   0.9647113
-##   0.9851748
-##   0.9892027
-##   0.9663991
-##   0.9867859
-##   0.9896866
-##   0.9649503
-##   0.9859804
-##   0.9896062
-##   0.9675281
-##   0.9860602
-##   0.9897668
-##   0.9668826
-##   0.9867863
-##   0.9903309
-##   0.9669684
-##   0.9860613
-##   0.9900089
-## 
-## Tuning parameter 'gamma' was held constant at a value of 0
-## 
-## Tuning parameter 'min_child_weight' was held constant at a value of 1
-## Accuracy was used to select the optimal model using the largest value.
-## The final values used for the model were nrounds = 150, max_depth = 3,
-##  eta = 0.4, gamma = 0, colsample_bytree = 0.8, min_child_weight = 1
-##  and subsample = 0.75.
+## [1] 0.9928659
 ```
 
-Both random forest and xgbtree give an accuracy of 0.99 on the training set. Let's see how they perform on the validation set.
+Both random forest and xgbtree give an accuracy of ~0.99 on the training set. Let's see how they perform on the validation set.
 
-### Out-of-sample accuracy
+
+```r
+mat <- xgboost::xgb.importance(feature_names = colnames(trainNum),model = fit3$finalModel)
+xgboost::xgb.plot.importance (importance_matrix = mat[1:20]) 
+```
+
+![](Wearbles_draft_files/figure-html/unnamed-chunk-14-1.png)<!-- -->
+
+
+### Out-of-sample accuracy & error
 
 ```r
 valpred1 <- predict(fit1, newdata = validation)
@@ -537,34 +367,34 @@ confusionMatrix(valpred1, validation$classe)
 ## 
 ##           Reference
 ## Prediction    A    B    C    D    E
-##          A 1116    1    0    0    0
-##          B    0  757    1    0    0
-##          C    0    1  683    2    0
-##          D    0    0    0  641    0
-##          E    0    0    0    0  721
+##          A 1116    3    0    0    0
+##          B    0  754    3    0    1
+##          C    0    2  680    6    0
+##          D    0    0    1  637    1
+##          E    0    0    0    0  719
 ## 
 ## Overall Statistics
-##                                          
-##                Accuracy : 0.9987         
-##                  95% CI : (0.997, 0.9996)
-##     No Information Rate : 0.2845         
-##     P-Value [Acc > NIR] : < 2.2e-16      
-##                                          
-##                   Kappa : 0.9984         
-##                                          
-##  Mcnemar's Test P-Value : NA             
+##                                           
+##                Accuracy : 0.9957          
+##                  95% CI : (0.9931, 0.9975)
+##     No Information Rate : 0.2845          
+##     P-Value [Acc > NIR] : < 2.2e-16       
+##                                           
+##                   Kappa : 0.9945          
+##                                           
+##  Mcnemar's Test P-Value : NA              
 ## 
 ## Statistics by Class:
 ## 
 ##                      Class: A Class: B Class: C Class: D Class: E
-## Sensitivity            1.0000   0.9974   0.9985   0.9969   1.0000
-## Specificity            0.9996   0.9997   0.9991   1.0000   1.0000
-## Pos Pred Value         0.9991   0.9987   0.9956   1.0000   1.0000
-## Neg Pred Value         1.0000   0.9994   0.9997   0.9994   1.0000
+## Sensitivity            1.0000   0.9934   0.9942   0.9907   0.9972
+## Specificity            0.9989   0.9987   0.9975   0.9994   1.0000
+## Pos Pred Value         0.9973   0.9947   0.9884   0.9969   1.0000
+## Neg Pred Value         1.0000   0.9984   0.9988   0.9982   0.9994
 ## Prevalence             0.2845   0.1935   0.1744   0.1639   0.1838
-## Detection Rate         0.2845   0.1930   0.1741   0.1634   0.1838
-## Detection Prevalence   0.2847   0.1932   0.1749   0.1634   0.1838
-## Balanced Accuracy      0.9998   0.9985   0.9988   0.9984   1.0000
+## Detection Rate         0.2845   0.1922   0.1733   0.1624   0.1833
+## Detection Prevalence   0.2852   0.1932   0.1754   0.1629   0.1833
+## Balanced Accuracy      0.9995   0.9961   0.9958   0.9950   0.9986
 ```
 
 ```r
@@ -577,50 +407,69 @@ confusionMatrix(valpred3, validation$classe)
 ## 
 ##           Reference
 ## Prediction    A    B    C    D    E
-##          A 1116    0    0    0    0
-##          B    0  759    0    0    0
-##          C    0    0  683    0    0
-##          D    0    0    1  642    0
-##          E    0    0    0    1  721
+##          A 1116    3    0    0    0
+##          B    0  756    2    0    0
+##          C    0    0  681    9    0
+##          D    0    0    1  634    3
+##          E    0    0    0    0  718
 ## 
 ## Overall Statistics
 ##                                           
-##                Accuracy : 0.9995          
-##                  95% CI : (0.9982, 0.9999)
+##                Accuracy : 0.9954          
+##                  95% CI : (0.9928, 0.9973)
 ##     No Information Rate : 0.2845          
 ##     P-Value [Acc > NIR] : < 2.2e-16       
 ##                                           
-##                   Kappa : 0.9994          
+##                   Kappa : 0.9942          
 ##                                           
 ##  Mcnemar's Test P-Value : NA              
 ## 
 ## Statistics by Class:
 ## 
 ##                      Class: A Class: B Class: C Class: D Class: E
-## Sensitivity            1.0000   1.0000   0.9985   0.9984   1.0000
-## Specificity            1.0000   1.0000   1.0000   0.9997   0.9997
-## Pos Pred Value         1.0000   1.0000   1.0000   0.9984   0.9986
-## Neg Pred Value         1.0000   1.0000   0.9997   0.9997   1.0000
+## Sensitivity            1.0000   0.9960   0.9956   0.9860   0.9958
+## Specificity            0.9989   0.9994   0.9972   0.9988   1.0000
+## Pos Pred Value         0.9973   0.9974   0.9870   0.9937   1.0000
+## Neg Pred Value         1.0000   0.9991   0.9991   0.9973   0.9991
 ## Prevalence             0.2845   0.1935   0.1744   0.1639   0.1838
-## Detection Rate         0.2845   0.1935   0.1741   0.1637   0.1838
-## Detection Prevalence   0.2845   0.1935   0.1741   0.1639   0.1840
-## Balanced Accuracy      1.0000   1.0000   0.9993   0.9991   0.9998
+## Detection Rate         0.2845   0.1927   0.1736   0.1616   0.1830
+## Detection Prevalence   0.2852   0.1932   0.1759   0.1626   0.1830
+## Balanced Accuracy      0.9995   0.9977   0.9964   0.9924   0.9979
 ```
 
-xgbtree has the best prediction accuracy on the validation dataset of 0.9967, as well as better per-class  statistics. Random forest is a close second.
+xgbtree has the best prediction accuracy on the validation dataset of 0.996, as well as better per-class  statistics. Random forest is a close second.
+
+#### Expected Out-of sample error in percent
+
+```r
+accuracy.rf <- sum(valpred1 == validation$classe)/length(valpred1)
+accuracy.xgb <- sum(valpred3 == validation$classe)/length(valpred3)
+
+out.sample.error.rf <- (1 - accuracy.rf)*100
+out.sample.error.xgb <- (1 - accuracy.xgb)*100
+
+print(out.sample.error.rf , digits = 3)
+```
+
+```
+## [1] 0.433
+```
+
+```r
+print(out.sample.error.xgb , digits = 3)
+```
+
+```
+## [1] 0.459
+```
+
 
 ## Test set prediction
 
 ```r
 test.xgb <- predict(fit3, newdata = testing)
-test.rf <- predict(fit1, newdata = testing)
 
-test.xgb; test.rf
-```
-
-```
-##  [1] B A B A A E D B A A B C B A E E A B B B
-## Levels: A B C D E
+test.xgb
 ```
 
 ```
@@ -628,4 +477,11 @@ test.xgb; test.rf
 ## Levels: A B C D E
 ```
 
-The prediction using both RF & XGB tree is identical on the test set.
+
+#Conclusion
+
+The dataset had a number of features alongwith the categorical response variable classe. The features with NA values were removed alongwith features like user and time which should not have an impact on our response variable. PCA with these features show that the classe variables segregate according to these features. It was interesting to note that there was clear segregation based on the users (even though users were not included as a feature). This indicates that characteristics of usage by different users could be detected by the sensors.
+
+Random forest, XGBTree and LDA models were trained on the data using default parameters and 3-fold cross-validation. RF & XGBtree had the best performance with ~99% accuracy. The out-of-sample error rate estimated on the validation data was 0.54% and 0.43% for xgbtree & Rf respectively.
+
+Prediction on the test set was done using XGB tree model.
